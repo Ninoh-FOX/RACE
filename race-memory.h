@@ -18,6 +18,7 @@
 #include "graphics.h"
 #include "main.h"
 #include "flash.h"
+#include "ngp_link.h"
 
 #ifdef DRZ80
 #include "DrZ80_support.h"
@@ -124,6 +125,12 @@ static INLINE unsigned char tlcsMemReadB(unsigned int addr)
       {
          if(addr == 0xBC)
             ngpSoundExecute();
+         if (ngp_link_on && addr >= 0x50 && addr <= 0x53)
+         {
+            unsigned char v = 0;
+            ngp_sio_io_read(addr, &v);
+            return v;
+         }
          return cpuram[addr];
       }
       else if (addr > 0x00003FFF && addr < 0x00018000)
@@ -190,6 +197,11 @@ static INLINE void tlcsMemWriteB(unsigned int addr, unsigned char data)
    addr&= 0x00FFFFFF;
    if (addr<0x000008a0)
    {
+      if (ngp_link_on && addr >= 0x50 && addr <= 0x53)
+      {
+         ngp_sio_io_write(addr, data);
+         return;
+      }
       switch(addr)
       {
          case 0xA0:	/* L CH Sound Source Control Register */

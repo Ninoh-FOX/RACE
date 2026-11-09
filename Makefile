@@ -364,6 +364,18 @@ else ifeq ($(platform), retrofw)
    CFLAGS += -fomit-frame-pointer -ffast-math -march=mips32 -mtune=mips32 -mhard-float
    CXXFLAGS += $(CFLAGS)
    
+# Miyoo Mini (Plus)
+else ifeq ($(platform), miyoomini)
+   TARGET := $(TARGET_NAME)_libretro.so
+   CC = /opt/miyoomini-toolchain/usr/bin/arm-linux-gcc
+   CXX = /opt/miyoomini-toolchain/usr/bin/arm-linux-g++
+   AR = /opt/miyoomini-toolchain/usr/bin/arm-linux-ar
+   fpic := -fPIC
+   SHARED := -shared -Wl,-version-script=$(LIBRETRO_DIR)/link.T -Wl,--no-undefined
+   CFLAGS += -marm -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -fomit-frame-pointer
+   OPTFLAGS := -O3
+   CXXFLAGS += $(CFLAGS)
+
 # MIYOO
 else ifeq ($(platform), miyoo)
    TARGET := $(TARGET_NAME)_libretro.so
@@ -584,12 +596,13 @@ CORE_DIR := .
 
 include Makefile.common
 
-OBJECTS := $(SOURCES_C:.c=.o) $(SOURCES_ASM:.s=.o)
+OBJECTS := $(SOURCES_C:.c=.o) $(SOURCES_ASM:.s=.o) $(SOURCES_CXX:.cpp=.o)
 
 ifeq ($(DEBUG),1)
 FLAGS += -O0 -g
 else
-FLAGS += -O2 -DNDEBUG
+OPTFLAGS ?= -O2
+FLAGS += $(OPTFLAGS) -DNDEBUG
 endif
 
 ifeq ($(LOW_MEMORY), 1)
@@ -608,6 +621,7 @@ endif
 FLAGS += -I. $(fpic) $(libs) $(includes) -DWANT_CRC32
 CXXFLAGS += $(FLAGS) $(INCFLAGS) $(INCFLAGS_PLATFORM)
 CFLAGS += $(FLAGS) $(INCFLAGS) $(INCFLAGS_PLATFORM)
+CXXFLAGS += $(FLAGS) $(INCFLAGS) $(INCFLAGS_PLATFORM) -fno-rtti -fno-exceptions
 
 OBJOUT   = -o
 LINKOUT  = -o 
@@ -634,18 +648,43 @@ ${LIBRARY_NAME}_FILES = $(SOURCES_C)
 include $(THEOS_MAKE_PATH)/library.mk
 else
 all: $(TARGET)
-$(TARGET): $(OBJECTS)
+
+# Dual link: instance B is the core built again with -DRACE_INSTANCE_B,
+# linked into one object with every global it defines renamed ngpb_*.
+# What it uses but does not define (libc, libretro-common) stays shared.
+DUAL_GCC := $(firstword $(filter %gcc,$(CC)))
+ifneq ($(DUAL_GCC),)
+NM      ?= $(patsubst %gcc,%nm,$(DUAL_GCC))
+OBJCOPY ?= $(patsubst %gcc,%objcopy,$(DUAL_GCC))
+endif
+NM      ?= nm
+OBJCOPY ?= objcopy
+RACE_B_OBJECTS := $(patsubst $(CORE_DIR)/%.c,obj_b/%.o,$(RACE_B_SOURCES))
+
+obj_b/%.o: $(CORE_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) -c $(OBJOUT)$@ $< $(CFLAGS) -DRACE_INSTANCE_B
+
+race_b_all.o: $(RACE_B_OBJECTS)
+	$(CC) -r -nostdlib -o $@ $(RACE_B_OBJECTS)
+
+race_b.o: race_b_all.o
+	$(NM) -g --defined-only $< | awk 'NF == 3 { print $$3 " ngpb_" $$3 }' > $@.syms
+	$(OBJCOPY) --redefine-syms=$@.syms $< $@
+	rm -f $@.syms
+
+$(TARGET): $(OBJECTS) race_b.o
 ifeq ($(STATIC_LINKING), 1)
-	$(AR) rcs $@ $(OBJECTS)
+	$(AR) rcs $@ $(OBJECTS) race_b.o
 else
-	$(LD) $(LINKOUT)$@ $(SHARED) $(OBJECTS) $(LDFLAGS) $(LIBS)
+	$(CXX) $(LINKOUT)$@ $(SHARED) $(OBJECTS) race_b.o $(LDFLAGS) $(LIBS)
 endif
 
 clean-objs:
-	rm -f $(OBJECTS)
+	rm -f $(OBJECTS) $(RACE_B_OBJECTS) race_b_all.o race_b.o
 
 clean:
-	rm -f $(OBJECTS)
+	rm -f $(OBJECTS) $(RACE_B_OBJECTS) race_b_all.o race_b.o
 	rm -f $(TARGET)
 
 install:

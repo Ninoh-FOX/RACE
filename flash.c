@@ -217,6 +217,11 @@ void setupNGFfilename(void)
 /* write all the dirty blocks out to a file */
 void writeSaveGameFile(void)
 {
+#ifdef RACE_INSTANCE_B
+   /* The hidden instance of the dual link: its save is the other
+    * console's, which keeps it */
+   return;
+#else
    /* find the dirty blocks and write them to the .NGF file */
    int totalBlocks = bootBlockStartNum+4;
    RFILE *ngfFile  = NULL;
@@ -321,11 +326,15 @@ void writeSaveGameFile(void)
 
    filestream_close(ngfFile);
    needToWriteFile = 0;
+#endif
 }
 
 /* read the save-game file and overlay it onto mainrom */
 void loadSaveGameFile(void)
 {
+#ifdef RACE_INSTANCE_B
+   return;
+#else
    /* find the NGF file and read it in */
    RFILE *ngfFile = NULL;
    int64_t bytes;
@@ -461,6 +470,7 @@ void loadSaveGameFile(void)
    }
 
    free(blockMem);
+#endif
 }
 
 void flashWriteByte(unsigned int addr, unsigned char data, unsigned char operation)

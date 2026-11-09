@@ -34,6 +34,7 @@
 #include <retro_inline.h>
 #include "tlcs900h.h"
 #include "race-memory.h"
+#include "ngp_link.h"
 #include "ngpBios.h"
 #include "types.h"
 
@@ -5837,6 +5838,10 @@ static INLINE int VECT_GEMODESET(unsigned char mode)
 // execute a bios function
 static INLINE int doBios(unsigned char biosNr)
 {
+    int link_cycles;
+    /* The link cable (dual link): the COM calls and serial handlers */
+    if (ngp_link_on && ngp_com_hle(biosNr, &link_cycles))
+        return link_cycles;
     switch (biosNr)
     {
         case 0x00:
@@ -7664,6 +7669,8 @@ void tlcs_execute(int cycles, int skipRender)
         tlcsTimers(elapsed);
         elapsed*=tlcsClockMulti;
         soundStep(elapsed);
+        if (ngp_link_on)
+            ngp_sio_tick(elapsed);
 
         hCounter-= elapsed;
 

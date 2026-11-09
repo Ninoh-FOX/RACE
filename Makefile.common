@@ -20,6 +20,8 @@ SOURCES_C := \
 	$(CORE_DIR)/race-memory.c \
 	$(CORE_DIR)/ngpBios.c \
 	$(CORE_DIR)/state.c \
+	$(CORE_DIR)/ngp_link.c \
+	$(CORE_DIR)/ngp_machine.c \
 	$(CORE_DIR)/sound.c \
 	$(CORE_DIR)/neopopsound.c \
 	$(CORE_DIR)/neopop_blip.c \
@@ -55,3 +57,12 @@ FLAGS += -D__LIBRETRO__ -D_MAX_PATH=2048
 ifeq (,$(findstring msvc,$(platform)))
 CXXFLAGS += -fpermissive
 endif
+
+# Dual link (netplay link cable): the session, in instance A only
+SOURCES_CXX += $(CORE_DIR)/libretro/ngp_dual.cpp
+
+# The hidden instance B of the dual link: the core again, without the
+# frontend side (ngp_instance_b.c instead of libretro.c), with
+# -DRACE_INSTANCE_B. libretro-common stays shared with instance A.
+RACE_B_SOURCES := $(filter-out $(CORE_DIR)/libretro/libretro.c $(CORE_DIR)/libretro/log.c $(LIBRETRO_COMM_DIR)/%,$(SOURCES_C)) \
+	$(CORE_DIR)/ngp_instance_b.c

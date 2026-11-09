@@ -368,6 +368,9 @@ void mem_init(void)
 					*((unsigned int *)(&cpurom[0xfe00 + 4*i])) = (unsigned int)0x00ffe000 + 0x40 * i;
 				}
 
+				// the default serial handlers of the COM calls (link cable)
+				ngp_link_install_bios(cpurom);
+
 				// setup SWI 1 code & vector
 				x = 0xf000;
 				cpurom[x] = 0x17; x++; cpurom[x] = 0x03; x++;		// ldf 3
