@@ -131,7 +131,7 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "race_dual_link",
       "Netplay Link Cable (Restart)",
-      "Netplay with this core plugs the link cable between both Neo Geo Pockets: each console runs both machines (its own and a copy of the other one) and only the buttons travel over the network. Both consoles need the same game and the same settings; each player keeps their own save. The Real-Time Clock must be 'Deterministic'.",
+      "Netplay with this core plugs the link cable between both Neo Geo Pockets: each console runs both machines (its own and a copy of the other one) and only the buttons travel over the network. Both consoles need the same game and the same settings; each player keeps their own save. While linked, the Real-Time Clock is 'Deterministic' whatever its setting.",
       {
          { "enabled",  "Enabled" },
          { "disabled", "Disabled" },

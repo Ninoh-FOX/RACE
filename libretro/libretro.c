@@ -241,10 +241,17 @@ static void check_variables(bool first_run)
 
    var.key   = "race_rtc_mode";
    var.value = NULL;
-   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-      rtc_deterministic = strcmp(var.value, "realtime") ? 1 : 0;
-   else
-      rtc_deterministic = 1;
+   {
+      int rtc = 1;
+      if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+         rtc = strcmp(var.value, "realtime") ? 1 : 0;
+      /* While linked the clock stays deterministic: the option applies
+       * once the link ends */
+      if (dual_linked)
+         dual_saved_rtc = rtc;
+      else
+         rtc_deterministic = rtc;
+   }
 
    /* Audio quality is read on (re)start only, so the synthesis path does not
     * change mid-frame. The fast path is the default. */
@@ -1026,7 +1033,8 @@ bool retro_load_game(const struct retro_game_info *info)
 
    /* The dual link needs the ROM as it was loaded (the save is overlaid
     * on mainrom), to load the other console's machine and its save */
-   if (dual_enabled && rtc_deterministic)
+   /* (Any clock: the link makes it deterministic while it lasts) */
+   if (dual_enabled)
    {
       free(dual_rom);
       dual_rom_size = 0;
