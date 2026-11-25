@@ -63,13 +63,14 @@ static bool dual_enabled                   = false; /* Core option, at load */
 static bool dual_linked                    = false; /* Both machines on the cable */
 static unsigned dual_my_slot               = 0;
 static uint32_t dual_slot_keys[2];
+static int16_t dual_last_audio[2];
 static uint8_t *dual_rom                   = NULL;  /* The ROM as loaded (no save) */
 static size_t dual_rom_size                = 0;
 static char dual_rom_name[_MAX_PATH];
 static int dual_saved_rtc                  = 1;
 static void dual_register(void);
 static void race_audio_frame(void);
-static void dual_idle_frame(void);
+static void dual_idle_frame(bool hold_audio);
 static void dual_run_frame(void);
 
 static void retro_audio_buff_status_cb(
@@ -462,7 +463,7 @@ void retro_run(void)
    /* The dual link: both machines run here, in step with the other console */
    if (dual_setting_up())
    {
-      dual_idle_frame();
+      dual_idle_frame(false);
       return;
    }
    if (dual_running())
@@ -550,6 +551,7 @@ static void race_audio_frame(void)
    static int16_t stereoBuffer[AUDIO_SAMPLES_PER_FRAME * 2];
    int16_t *p = NULL;
    uint16_t samplesPerFrame;
+   int frames;
 
    /* Get the number of samples in a frame */
    samplesPerFrame = RETRO_SAMPLE_RATE / 60;
@@ -560,9 +562,7 @@ static void race_audio_frame(void)
        * the CPU ran (via soundStep); flush them to interleaved stereo here.
        * The cap is the buffer's capacity in stereo frames (it holds
        * AUDIO_SAMPLES_PER_FRAME pairs), so the drain can never overrun it. */
-      int n = neopop_blip_flush(stereoBuffer, AUDIO_SAMPLES_PER_FRAME);
-      if (n > 0)
-         audio_batch_cb(stereoBuffer, n);
+      frames = neopop_blip_flush(stereoBuffer, AUDIO_SAMPLES_PER_FRAME);
    }
    else
    {
@@ -580,7 +580,17 @@ static void race_audio_frame(void)
          p += 2;
       }
 
-      audio_batch_cb(stereoBuffer, samplesPerFrame);
+      frames = samplesPerFrame;
+   }
+
+   if (frames > 0)
+   {
+      if (dual_linked)
+      {
+         dual_last_audio[0] = stereoBuffer[2 * frames - 2];
+         dual_last_audio[1] = stereoBuffer[2 * frames - 1];
+      }
+      audio_batch_cb(stereoBuffer, frames);
    }
 }
 
@@ -605,15 +615,24 @@ static uint32_t dual_local_keys(void)
    return keys;
 }
 
-/* A frame that does not run (the link waits): the same picture, silence */
-static void dual_idle_frame(void)
+/* Repeat the picture. In play, hold the last stereo sample while waiting. */
+static void dual_idle_frame(bool hold_audio)
 {
-   static int16_t silence[AUDIO_SAMPLES_PER_FRAME * 2];
+   static const int16_t silence[AUDIO_SAMPLES_PER_FRAME * 2] = { 0 };
+   static int16_t hold[AUDIO_SAMPLES_PER_FRAME * 2];
    unsigned frames = RETRO_SAMPLE_RATE / 60;
    if (frames > AUDIO_SAMPLES_PER_FRAME)
       frames = AUDIO_SAMPLES_PER_FRAME;
+   if (hold_audio)
+   {
+      for (unsigned i = 0; i < frames; i++)
+      {
+         hold[2 * i] = dual_last_audio[0];
+         hold[2 * i + 1] = dual_last_audio[1];
+      }
+   }
    video_cb(NULL, FB_WIDTH, FB_HEIGHT, FB_WIDTH << 1);
-   audio_batch_cb(silence, frames);
+   audio_batch_cb(hold_audio ? hold : silence, frames);
 }
 
 /* The machine of a slot: ours is instance A, the other one instance B */
@@ -675,7 +694,7 @@ static void dual_run_frame(void)
 {
    if (dual_frame_begin(dual_local_keys()) != DUAL_FRAME_RUN || !dual_linked)
    {
-      dual_idle_frame();
+      dual_idle_frame(dual_linked);
       return;
    }
    dual_link_frame(1);
@@ -801,6 +820,7 @@ static bool dual_hook_link(unsigned my_slot, const uint8_t *own, size_t own_size
    ngpm_link(1);
    ngpb_ngpm_link(1);
    dual_slot_keys[0] = dual_slot_keys[1] = 0;
+   dual_last_audio[0] = dual_last_audio[1] = 0;
    dual_linked = true;
    if (log_cb)
       log_cb(RETRO_LOG_INFO, "NGP dual link: this Neo Geo Pocket is slot %u\n", my_slot);

@@ -618,9 +618,17 @@ bool dual_net_connected(uint16_t client_id)
 
 void dual_net_disconnected(uint16_t client_id)
 {
-    if (!ds.is_host || ds.state == DS_OFF || ds.slot_id[1] != (int)client_id)
+    if (!ds.is_host || ds.slot_id[1] != (int)client_id)
         return;
     dual_stop(ds.state == DS_RUN ? "NGP link: the other console left" : NULL);
+    // The frontend still hosts: the next console to join gets the cable
+    // (else slot 1 kept this id and nobody else could have it).
+    if (ds.send)
+    {
+        dual_session_reset();
+        ds.state = DS_WAIT;
+        ds.t_state = now_us();
+    }
 }
 
 bool dual_setting_up(void)
@@ -640,12 +648,13 @@ bool dual_setting_up(void)
     while (true)
     {
         dual_setup_step();
-        if (ds.state == DS_OFF || ds.state == DS_RUN || now_us() - t0 > DUAL_SLICE_US)
+        if (ds.state == DS_OFF || ds.state == DS_RUN || ds.state == DS_WAIT ||
+            now_us() - t0 > DUAL_SLICE_US)
             break;
         poll_receive();
         usleep(250);
     }
-    return ds.state != DS_OFF && ds.state != DS_RUN;
+    return ds.state != DS_OFF && ds.state != DS_RUN && ds.state != DS_WAIT;
 }
 
 bool dual_running(void)
@@ -834,9 +843,10 @@ void dual_net_receive(const void* buf, size_t len, uint16_t client_id)
             {
                 if (!dual_hello_matches(w))
                 {
-                    // That console plays alone, and so do we.
+                    // That console plays alone, and so do we (still
+                    // waiting: another console may join with this game).
                     dual_send(client_id, DPK_GIVEUP, NULL, 0, NULL, 0);
-                    dual_stop(DUAL_MSG_DIFFER);
+                    dual_msg(DUAL_MSG_DIFFER);
                     break;
                 }
                 dual_send_hello(client_id);
